@@ -20,22 +20,21 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# The module entry point is loaded by name: META-INF/xposed/java_init.list holds
-# "io.github.achyuki.oautopin.Hook" and the framework instantiates that class
-# reflectively in the hooked process.
+# The module entry point is loaded by name: META-INF/xposed/java_init.list
+# contains "io.github.achyuki.oautopin.Hook" and the framework instantiates that
+# class reflectively inside the hooked process.
 #
-# The class name must therefore be preserved. Do NOT add allowobfuscation here:
-# minification would rename the class to something like `d0.c`, the entry class
-# would no longer exist under the declared name, and the release build would
-# silently stop working. -adaptresourcefilecontents is not a substitute, because
-# the framework reads the literal name from the list file.
--keep,allowoptimization,allowshrinking public class io.github.achyuki.oautopin.Hook {
-    public <init>();
+# The class must therefore survive minification under its original name, so this
+# rule is an unqualified -keep (no allowobfuscation, no allowshrinking). If the
+# class is renamed, the release build silently stops working: the framework
+# looks up a name that no longer exists in the dex.
+-keep class io.github.achyuki.oautopin.Hook {
+    *;
 }
 
-# Safety net for any additional libxposed entry class added later: they all
-# inherit from XposedModule.
--keep,allowoptimization,allowshrinking public class * extends io.github.libxposed.api.XposedModule {
+# Safety net for any further libxposed entry class added later: they all inherit
+# from XposedModule.
+-keep class * extends io.github.libxposed.api.XposedModule {
     public <init>();
 }
 
