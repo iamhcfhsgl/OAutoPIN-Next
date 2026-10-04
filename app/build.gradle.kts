@@ -7,20 +7,20 @@ plugins {
 }
 
 android {
-    namespace = "io.github.achyuki.oautopin"
+    namespace = "io.github.iamhcfhsgl.oautopin"
     // libxposed service 102 publishes minCompileSdk 37, so the app must compile
     // against 37 or AGP fails the build. Runtime behaviour is still bounded by
     // minSdk/targetSdk below.
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.achyuki.oautopin"
+        applicationId = "io.github.iamhcfhsgl.oautopin"
         minSdk = 35
         targetSdk = 36
-        // First release of the libxposed port; the upstream module never published
-        // a release, so this starts its own version line.
-        versionCode = 2
-        versionName = "16.1.0"
+        // 16.1.0 was the first libxposed release; 16.2.0 renames the package from
+        // the upstream io.github.achyuki.oautopin to this fork's own id.
+        versionCode = 3
+        versionName = "16.2.0"
     }
 
     signingConfigs {
