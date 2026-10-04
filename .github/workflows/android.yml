@@ -30,24 +30,30 @@ jobs:
           java-version: '21'
 
       # The ubuntu runner image already ships the Android SDK; no third-party
-      # setup action is needed. Install the platform this project compiles
-      # against (compileSdk 37) if the image does not have it yet.
+      # setup action is needed (android-actions/setup-android@v3 fails on this
+      # image because its sdkmanager cannot find the legacy 'tools' package).
       - name: Check Android SDK
         run: |
           set -e
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "using SDK at $SDK"
-          echo "$SDK" >> "$GITHUB_ENV"
-          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          ls "$SDK/platforms" 2>/dev/null || true
-          if [ ! -d "$SDK/platforms/android-37" ]; then
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "SDK platforms before:"; ls "$SDK/platforms" 2>/dev/null || true
+
+          # cmdline-tools may live in latest/ or in a versioned directory.
+          BIN=""
+          for cand in "$SDK/cmdline-tools/latest/bin" "$SDK"/cmdline-tools/*/bin; do
+            if [ -x "$cand/sdkmanager" ]; then BIN="$cand"; break; fi
+          done
+          echo "sdkmanager bin: ${BIN:-<none>}"
+
+          if [ ! -d "$SDK/platforms/android-37" ] && [ -n "$BIN" ]; then
             echo "installing platform 37"
-            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-            "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0" || true
+            yes | "$BIN/sdkmanager" --licenses > /dev/null 2>&1 || true
+            "$BIN/sdkmanager" "platforms;android-37" || true
           fi
-          ls "$SDK/platforms" 2>/dev/null || true
+          echo "SDK platforms after:"; ls "$SDK/platforms" 2>/dev/null || true
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
