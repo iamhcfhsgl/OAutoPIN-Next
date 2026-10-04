@@ -27,6 +27,9 @@ render.experimental.xml
 *.jks
 *.keystore
 
+# Signing material is generated per build (see .github/workflows/release.yml)
+signing/
+
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 
