@@ -110,12 +110,36 @@ jobs:
       - name: Inspect the built APK
         run: |
           set -e
-          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
-          echo "release apk: $APK"
-          unzip -p "$APK" META-INF/xposed/java_init.list
-          echo "--- entry class present in dex? ---"
-          unzip -o -q "$APK" classes.dex -d /tmp/apkdex
-          grep -c 'Lio/github/achyuki/oautopin/Hook;' /tmp/apkdex/classes.dex || true
+          ENTRY="io.github.achyuki.oautopin.Hook"
+          DESC="Lio/github/achyuki/oautopin/Hook;"
+
+          for variant in debug release; do
+            APK=$(find "app/build/outputs/apk/$variant" -name '*.apk' | head -n 1)
+            echo "=== $variant: $APK"
+
+            # The entry class name written into the APK must be the real class
+            # name, and that class must still exist in the dex. R8 renaming it
+            # (or adapting this file to a renamed class) breaks the release build
+            # silently, because the framework loads the class by name.
+            IN_APK=$(unzip -p "$APK" META-INF/xposed/java_init.list | tr -d '\r\n')
+            echo "java_init.list = '$IN_APK'"
+            if [ "$IN_APK" != "$ENTRY" ]; then
+              echo "::error::$variant java_init.list contains '$IN_APK' but the framework needs '$ENTRY'"
+              exit 1
+            fi
+
+            rm -rf /tmp/dexcheck && mkdir -p /tmp/dexcheck
+            unzip -o -q "$APK" 'classes*.dex' -d /tmp/dexcheck
+            if grep -rlF "$DESC" /tmp/dexcheck > /dev/null; then
+              echo "entry class $DESC present in dex: OK"
+            else
+              echo "::error::$variant entry class $DESC is missing from the dex (minifier renamed or removed it)"
+              exit 1
+            fi
+
+            unzip -l "$APK" | grep -E 'META-INF/xposed/' || true
+          done
+
           ls -l app/build/outputs/apk/debug app/build/outputs/apk/release
 
       - name: Upload APKs
