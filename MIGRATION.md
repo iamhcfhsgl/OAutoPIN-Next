@@ -136,23 +136,28 @@ META-INF/xposed/java_init.list`，结果 release 包里 `java_init.list` 变成 
 
 ## 验证
 
-### 云端编译（已通过）
+### 云端编译与发行版（已通过）
 
-`.github/workflows/android.yml` 在 GitHub Actions 上完成 debug + release 构建并通过
-APK 断言。当前成功运行：
-<https://github.com/iamhcfhsgl/OAutoPIN-Next/actions/runs/37176161957>
+`.github/workflows/android.yml` 在 GitHub Actions 上构建 release 并断言产物；正式发行由
+`.github/workflows/release.yml` 在 `v*` 标签上完成签名与发布。已发布：
 
-对该产物（debug 8.3 MB / release 567 KB）的独立复核结果：
+- 发行版：<https://github.com/iamhcfhsgl/OAutoPIN-Next/releases/tag/v16.1.0>
+  （附件 `OAutoPIN-16.1.0.apk`，575.5 KB，`versionCode 2` / `versionName 16.1.0`）
+- 构建记录：<https://github.com/iamhcfhsgl/OAutoPIN-Next/actions/runs/37177518441>
 
-| 检查项 | debug | release |
-| --- | --- | --- |
-| `META-INF/xposed/{java_init.list,module.prop,scope.list}` 已打包 | ✅ | ✅ |
-| `java_init.list` 内容 = `io.github.achyuki.oautopin.Hook` | ✅ | ✅ |
-| 该类存在于 dex（R8 未改名/未删除） | ✅ | ✅ |
-| `assets/xposed_init` 已移除 | ✅ | ✅ |
-| 清单里无 `xposedminversion` / `xposedmodule` 等 legacy meta-data | ✅ | ✅ |
-| dex 中无 `XSharedPreferences` / `XposedBridge` / `IXposedHookLoadPackage` | ✅ | ✅ |
-| `io.github.libxposed.service.XposedProvider` 已由 service 构件合并进清单 | ✅ | ✅ |
+对**已发布附件**的独立复核结果（本地校验脚本直接解析 APK Signing Block，不依赖 apksigner）：
+
+| 检查项 | 结果 |
+| --- | --- |
+| APK Signing Block + **v2 签名方案** 存在 | ✅ |
+| 签名证书可提取（v3、RSA 4096） | ✅ |
+| 证书有效期 | `2026-10-04` → **`2056-09-26`**（30 年，不会因证书过期而无法安装） |
+| `java_init.list` = `io.github.achyuki.oautopin.Hook` | ✅ |
+| `module.prop` = `minApiVersion=102` / `targetApiVersion=102` / `staticScope=true` / `autoHotReload=true` | ✅ |
+| Hook 类存在于 dex（R8 未改名） | ✅ |
+| `assets/xposed_init` 不存在 | ✅ |
+| dex 中无 `XSharedPreferences` 等 legacy 引用 | ✅ |
+| `io.github.libxposed.service.XposedProvider` 已合并进清单与 dex | ✅ |
 
 构建时唯一的提示是 AGP 8.13 对 `compileSdk = 37` 的「建议使用更新的 AGP」警告，不影响构建；
 若想静音可在 `gradle.properties` 加 `android.suppressUnsupportedCompileSdk=37`。
@@ -164,7 +169,7 @@ APK 断言。当前成功运行：
 4 个真实源文件：**0 错误**，并用 `javap` 核对了字节码（入口类继承 `XposedModule`、
 `onPackageLoaded` 用 `getDefaultClassLoader()`、`onHotReloaded` 调用了
 `getOldHookHandles()` / `replaceHook()`、hook 回调返回 `Chain.proceed()` 的结果而非
-`Unit`）。脚本在 `_verify/build.ps1`。
+`Unit`）。
 
 ### 仍需在真机确认
 
