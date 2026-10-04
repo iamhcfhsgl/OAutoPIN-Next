@@ -29,8 +29,25 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # The ubuntu runner image already ships the Android SDK; no third-party
+      # setup action is needed. Install the platform this project compiles
+      # against (compileSdk 37) if the image does not have it yet.
+      - name: Check Android SDK
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "using SDK at $SDK"
+          echo "$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          ls "$SDK/platforms" 2>/dev/null || true
+          if [ ! -d "$SDK/platforms/android-37" ]; then
+            echo "installing platform 37"
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0" || true
+          fi
+          ls "$SDK/platforms" 2>/dev/null || true
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
