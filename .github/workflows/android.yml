@@ -98,11 +98,14 @@ jobs:
             exit 1
           fi
 
+      # Invoked through bash on purpose: a freshly committed gradlew may not have
+      # the executable bit set (a plain file upload loses it), and `bash gradlew`
+      # works either way.
       - name: Assemble debug
-        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+        run: bash gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Assemble release
-        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
+        run: bash gradlew --no-daemon --stacktrace :app:assembleRelease
 
       - name: Inspect the built APK
         run: |
