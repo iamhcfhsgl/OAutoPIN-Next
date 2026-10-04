@@ -1,10 +1,29 @@
 # OAutoPIN → libxposed 迁移说明
 
+## 来源、修改与免责声明
+
+- **本项目不是原创**，而是从 [achyuki/OAutoPIN](https://github.com/achyuki/OAutoPIN) 修改升级而来，
+  上游基线提交 `275367d`（上游 `main`）。
+- **修改原因：原作者并未更新。** 上游模块仍使用 legacy Xposed API，并依赖
+  `XSharedPreferences` + `MODE_WORLD_READABLE` 的跨进程读写方案；该方案在 LSPosed 中已被标记为
+  废弃、计划于 2.3.0 移除（模块列表页会显示废弃警告），`MODE_WORLD_READABLE` 本身也早已被
+  Android 废弃。因此在**不改变原有功能**的前提下做了适配性升级。
+- **本项目的修改工作由 AI 大肥鱼老师完成。**
+- 除上述适配性修改外，目标应用（ColorOS 的 SystemUI）、hook 逻辑与使用方式均沿用上游；
+  上游的代码、名称等权利归原作者所有，本项目保留上游的 [MIT License](LICENSE)。
+- 本项目为**非官方修改版**，与原作者 **无隶属或授权关系**，沿用上游项目名与包名仅为保持兼容与
+  可追溯，不代表任何官方背书。
+- **仅供学习与技术研究使用，禁止商业用途**；修改系统行为有风险，请自行备份，作者不对任何损失负责。
+- **如有侵权请联系删除**：请提交 [Issue](https://github.com/iamhcfhsgl/OAutoPIN-Next/issues)，
+  我们会立即删除相关内容并停止分发；若原作者希望停止分发，请告知，我们会立即配合。
+
+## 迁移内容
+
+基线：`achyuki/OAutoPIN@275367d`（上游 `main`）。
+
 本次改动把模块从 **legacy Xposed API（`de.robv.android.xposed:api:82`）** 迁移到
 **libxposed 公共 API 102**，并彻底移除 `XSharedPreferences` / `MODE_WORLD_READABLE`，
 以消除 LSPosed 模块页针对新式 XSharedPreferences 的废弃警告（该机制计划于 2.3.0 移除）。
-
-基线：`achyuki/OAutoPIN@275367d`（upstream main）。
 
 ## 为什么必须换掉 XSharedPreferences
 
@@ -175,6 +194,38 @@ RemotePreferences 的可见性语义：注入进程通过 `getRemotePreferences`
 进程，第二次弹出 PIN 界面（重插 SIM、切换飞行模式）时该标志仍为 true，于是**不再自动填充，
 功能静默失效**。现在改为按 controller 实例记录（`WeakHashMap` 支撑的并发 set），
 每个新的 PIN 界面都会被服务一次。
+
+## 签名与发行版
+
+上一版流水线只产出 **unsigned** 包（`app-release-unsigned.apk`），无法直接安装；
+现在签名已完整接入构建，产物开箱可装。
+
+### 签名方式
+
+签名材料**不进入仓库**（`signing/` 已加入 `.gitignore`），由流水线在构建时生成：
+`.github/workflows/release.yml` 与 `android.yml` 都会用 `keytool` 生成
+`signing/release.jks`（RSA 4096、PKCS12、有效期 30 年），并写出同目录的
+`signing/signing.properties`；`app/build.gradle.kts` 的 `signingConfigs.release`
+读取该文件，因此 `:app:assembleRelease` 直接产出**已签名**的 `app-release.apk`。
+
+两点刻意为之：
+
+- **不用 `~/.android/debug.keystore`**：它的证书一年一换，用过期证书签出的 APK 装不上。
+  自建密钥固定 30 年有效期，并在流水线里打印 `Valid from` 便于核对。
+- **口令就写在公开的工作流里**，这是有意公开的：本项目不分发私钥，模块通过 LSPosed（root）
+  安装而非应用商店，因此这把密钥的性质是「稳定、公开、可复现的构建身份」，不是机密。
+  **请勿据此判断来源可信度**，也不要把它当成开发者身份证明。若需要私有签名，
+  把 `signing.properties` 换成你自己的密钥并把 `signing/` 保留在本地即可。
+
+### 发行版流水线
+
+`.github/workflows/release.yml` 在推送 `v*` 标签（或手动指定 tag）时触发，步骤为：
+解析版本 → 建签名密钥 → `assembleRelease` → `apksigner verify --print-certs` 校验签名 →
+校验 `java_init.list` 与 dex 中的入口类 → 生成发行说明 → 以
+`OAutoPIN-<version>.apk` 为附件发布 GitHub Release。
+
+`.github/workflows/android.yml` 则只在每次推送时做 release 构建与同样的一组断言，
+**不再上传 debug 产物**（debug 仅用于本地调试，不作为发行物）。
 
 ## 在 Android Studio 里继续开发
 
