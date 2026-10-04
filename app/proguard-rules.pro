@@ -21,14 +21,14 @@
 #-renamesourcefileattribute SourceFile
 
 # The module entry point is loaded by name: META-INF/xposed/java_init.list
-# contains "io.github.achyuki.oautopin.Hook" and the framework instantiates that
+# contains "io.github.iamhcfhsgl.oautopin.Hook" and the framework instantiates that
 # class reflectively inside the hooked process.
 #
 # The class must therefore survive minification under its original name, so this
 # rule is an unqualified -keep (no allowobfuscation, no allowshrinking). If the
 # class is renamed, the release build silently stops working: the framework
 # looks up a name that no longer exists in the dex.
--keep class io.github.achyuki.oautopin.Hook {
+-keep class io.github.iamhcfhsgl.oautopin.Hook {
     *;
 }
 
