@@ -25,6 +25,16 @@
 **libxposed 公共 API 102**，并彻底移除 `XSharedPreferences` / `MODE_WORLD_READABLE`，
 以消除 LSPosed 模块页针对新式 XSharedPreferences 的废弃警告（该机制计划于 2.3.0 移除）。
 
+### 版本历史
+
+| 版本 | 内容 |
+| --- | --- |
+| `16.1.0`（`versionCode 2`） | 首个 libxposed 版本：迁移到 API 102、改用 RemotePreferences、支持热重载 |
+| `16.2.0`（`versionCode 3`） | 包名由 `io.github.achyuki.oautopin` 改为 `io.github.iamhcfhsgl.oautopin` |
+
+包名变更后，`applicationId` 与签名都与 `16.1.0` 不同，**属于全新安装**：请先卸载旧版
+（会连同旧版遗留的 others 可读 `shared_prefs/pin.xml` 一并清除），再安装新版并重新保存 PIN。
+
 ## 为什么必须换掉 XSharedPreferences
 
 原实现把 PIN 写在 others 可读的 preference 文件里，再用 `XSharedPreferences` 跨进程读回来：
@@ -62,9 +72,11 @@ XML，而 `MODE_WORLD_READABLE` 本身早已被 Android 废弃。
 | 文件 | 变化 |
 | --- | --- |
 | `gradle/libs.versions.toml` | 新增 `libxposed = "102.0.0"`，拆出 `libxposed-api`（compileOnly）与 `libxposed-service`（implementation） |
-| `app/build.gradle.kts` | 去掉 `de.robv.android.xposed:api`，改用 `io.github.libxposed:api` + `io.github.libxposed:service`；`compileSdk` 由 36 提到 **37** |
+| `app/build.gradle.kts` | 去掉 `de.robv.android.xposed:api`，改用 `io.github.libxposed:api` + `io.github.libxposed:service`；`compileSdk` 由 36 提到 **37**；包名改为 `io.github.iamhcfhsgl.oautopin` |
 | `app/proguard-rules.pro` | keep 规则改为保护**新的**入口类（见下） |
 | `settings.gradle.kts` | 移除只服务于 legacy API 的 `https://api.xposed.info/` 仓库 |
+| `app/src/main/kotlin/io/github/iamhcfhsgl/oautopin/**` | 源码包由 `io.github.achyuki.oautopin` 迁移到 `io.github.iamhcfhsgl.oautopin` |
+| `META-INF/xposed/java_init.list` | 入口类名同步改为 `io.github.iamhcfhsgl.oautopin.Hook` |
 
 - `api` 必须是 `compileOnly`：hooked 进程里由框架提供。
 - `service` 必须是 `implementation`：模块自身的设置界面要通过 `XposedServiceHelper`
@@ -80,7 +92,7 @@ XML，而 `MODE_WORLD_READABLE` 本身早已被 Android 废弃。
 删除 `app/src/main/assets/xposed_init`，改用 libxposed 新式元数据：
 
 ```
-app/src/main/resources/META-INF/xposed/java_init.list   -> io.github.achyuki.oautopin.Hook
+app/src/main/resources/META-INF/xposed/java_init.list   -> io.github.iamhcfhsgl.oautopin.Hook
 app/src/main/resources/META-INF/xposed/module.prop      -> minApiVersion=102 / targetApiVersion=102 / staticScope=true / autoHotReload=true
 app/src/main/resources/META-INF/xposed/scope.list       -> com.android.systemui
 ```
@@ -119,7 +131,7 @@ app/src/main/resources/META-INF/xposed/scope.list       -> com.android.systemui
 **保留原名**：
 
 ```proguard
--keep class io.github.achyuki.oautopin.Hook { *; }
+-keep class io.github.iamhcfhsgl.oautopin.Hook { *; }
 -keep class * extends io.github.libxposed.api.XposedModule { public <init>(); }
 -dontwarn io.github.libxposed.annotation.**
 ```
@@ -127,7 +139,7 @@ app/src/main/resources/META-INF/xposed/scope.list       -> com.android.systemui
 这一点是实测出来的，值得写清楚：最初按参考工程写成
 `-keep,allowoptimization,allowobfuscation ...` 并配 `-adaptresourcefilecontents
 META-INF/xposed/java_init.list`，结果 release 包里 `java_init.list` 变成 `d0.c`，
-而 dex 里也已经没有 `io.github.achyuki.oautopin.Hook` 这个类 —— 两者对不上，
+而 dex 里也已经没有入口类（当时叫 `io.github.achyuki.oautopin.Hook`）—— 两者对不上，
 **release 包会彻底失效，而 debug 包完全正常**（不混淆，所以看不出问题）。
 
 结论：**这里不要用 `allowobfuscation`**，也不要把 `-adaptresourcefilecontents` 当作补救手段；
@@ -152,7 +164,7 @@ META-INF/xposed/java_init.list`，结果 release 包里 `java_init.list` 变成 
 | APK Signing Block + **v2 签名方案** 存在 | ✅ |
 | 签名证书可提取（v3、RSA 4096） | ✅ |
 | 证书有效期 | `2026-10-04` → **`2056-09-26`**（30 年，不会因证书过期而无法安装） |
-| `java_init.list` = `io.github.achyuki.oautopin.Hook` | ✅ |
+| `java_init.list` = `io.github.iamhcfhsgl.oautopin.Hook` | ✅ |
 | `module.prop` = `minApiVersion=102` / `targetApiVersion=102` / `staticScope=true` / `autoHotReload=true` | ✅ |
 | Hook 类存在于 dex（R8 未改名） | ✅ |
 | `assets/xposed_init` 不存在 | ✅ |
@@ -242,11 +254,13 @@ RemotePreferences 的可见性语义：注入进程通过 `getRemotePreferences`
 
 ## 已知注意点
 
-- **升级后请清一次模块数据**：设备上由旧版本写入的
-  `/data/data/io.github.achyuki.oautopin/shared_prefs/pin.xml` 不会被升级删除，
-  它可能仍是 others 可读。清除数据或重装即可移除。
-- RemotePreferences 的组名与键名保持原来的 `"pin"` / `"pin"`，便于与旧实现对照；
-  但旧文件里的值不会自动迁移，需要在新版设置页重新保存一次。
+- **包名已改为 `io.github.iamhcfhsgl.oautopin`**（上游为 `io.github.achyuki.oautopin`）。
+  由于包名与签名都变了，这属于**全新安装**：旧版必须先卸载，`16.2.0` 无法覆盖升级。
+  卸载会一并清除旧版遗留的 `/data/data/io.github.achyuki.oautopin/shared_prefs/pin.xml`。
+- RemotePreferences 的组名随包名改为 `"oautopin"`（键名仍为 `"pin"`）。因为是新安装，
+  没有需要迁移的旧数据；也刻意没做「读旧组名」的兼容回退 —— 否则用户保存新 PIN 后，
+  旧值仍会在下次读取时被回退命中。请在设置页重新保存一次 PIN。
+
 - 若框架未提供 remote 能力（`PROP_CAP_REMOTE` 未置位），代码会明确记录日志并放弃读取，
   不会静默失败；设置页也会显示具体原因。
 - 模块只对 `com.android.systemui` 生效；若 SystemUI 存在多进程，只有能加载到
