@@ -135,8 +135,8 @@ jobs:
       - name: Inspect the built APK
         run: |
           set -e
-          ENTRY="io.github.achyuki.oautopin.Hook"
-          DESC="Lio/github/achyuki/oautopin/Hook;"
+          ENTRY="io.github.iamhcfhsgl.oautopin.Hook"
+          DESC="Lio/github/iamhcfhsgl/oautopin/Hook;"
 
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
           echo "=== release: $APK"
