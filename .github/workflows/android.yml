@@ -101,10 +101,35 @@ jobs:
       # Invoked through bash on purpose: a freshly committed gradlew may not have
       # the executable bit set (a plain file upload loses it), and `bash gradlew`
       # works either way.
-      - name: Assemble debug
-        run: bash gradlew --no-daemon --stacktrace :app:assembleDebug
+      #
+      # Only the release build is produced: it is the variant that gets shipped,
+      # and it is the one where the minifier can break the module (see the APK
+      # assertions below). Debug builds are covered by the release workflow when a
+      # version tag is pushed.
+      # A self-generated key rather than ~/.android/debug.keystore: the debug
+      # keystore's certificate expires every year, and an APK signed with an
+      # expired certificate is not installable.
+      - name: Create signing key
+        run: |
+          set -e
+          mkdir -p signing
+          keytool -genkeypair -v \
+            -keystore signing/release.jks \
+            -storetype PKCS12 \
+            -alias oautopin \
+            -keyalg RSA -keysize 4096 \
+            -validity 10950 \
+            -storepass oautopin \
+            -keypass oautopin \
+            -dname "CN=OAutoPIN-Next, OU=libxposed port, O=OAutoPIN-Next, L=NA, ST=NA, C=NA"
+          cat > signing/signing.properties <<'EOF'
+          storeFile=signing/release.jks
+          storePassword=oautopin
+          keyAlias=oautopin
+          keyPassword=oautopin
+          EOF
 
-      - name: Assemble release
+      - name: Assemble release (signed)
         run: bash gradlew --no-daemon --stacktrace :app:assembleRelease
 
       - name: Inspect the built APK
@@ -113,41 +138,51 @@ jobs:
           ENTRY="io.github.achyuki.oautopin.Hook"
           DESC="Lio/github/achyuki/oautopin/Hook;"
 
-          for variant in debug release; do
-            APK=$(find "app/build/outputs/apk/$variant" -name '*.apk' | head -n 1)
-            echo "=== $variant: $APK"
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          echo "=== release: $APK"
 
-            # The entry class name written into the APK must be the real class
-            # name, and that class must still exist in the dex. R8 renaming it
-            # (or adapting this file to a renamed class) breaks the release build
-            # silently, because the framework loads the class by name.
-            IN_APK=$(unzip -p "$APK" META-INF/xposed/java_init.list | tr -d '\r\n')
-            echo "java_init.list = '$IN_APK'"
-            if [ "$IN_APK" != "$ENTRY" ]; then
-              echo "::error::$variant java_init.list contains '$IN_APK' but the framework needs '$ENTRY'"
+          # The shipped variant must actually be signed, otherwise it cannot be
+          # installed at all.
+          BUILD_TOOLS=$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/* | sort -V | tail -n 1)
+          echo "build-tools: $BUILD_TOOLS"
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+
+          # The entry class name written into the APK must be the real class name,
+          # and that class must still exist in the dex. R8 renaming it (or adapting
+          # this file to a renamed class) breaks the release build silently,
+          # because the framework loads the class by name.
+          IN_APK=$(unzip -p "$APK" META-INF/xposed/java_init.list | tr -d '\r\n')
+          echo "java_init.list = '$IN_APK'"
+          if [ "$IN_APK" != "$ENTRY" ]; then
+            echo "::error::java_init.list contains '$IN_APK' but the framework needs '$ENTRY'"
+            exit 1
+          fi
+
+          rm -rf /tmp/dexcheck && mkdir -p /tmp/dexcheck
+          unzip -o -q "$APK" 'classes*.dex' -d /tmp/dexcheck
+          if grep -rlF "$DESC" /tmp/dexcheck > /dev/null; then
+            echo "entry class $DESC present in dex: OK"
+          else
+            echo "::error::entry class $DESC is missing from the dex (minifier renamed or removed it)"
+            exit 1
+          fi
+
+          # The legacy bridge must be gone from the shipped dex.
+          for legacy in 'de/robv/android/xposed/XSharedPreferences' 'XposedBridge' 'IXposedHookLoadPackage'; do
+            if grep -rlF "$legacy" /tmp/dexcheck > /dev/null; then
+              echo "::error::legacy reference '$legacy' found in the dex"
               exit 1
             fi
-
-            rm -rf /tmp/dexcheck && mkdir -p /tmp/dexcheck
-            unzip -o -q "$APK" 'classes*.dex' -d /tmp/dexcheck
-            if grep -rlF "$DESC" /tmp/dexcheck > /dev/null; then
-              echo "entry class $DESC present in dex: OK"
-            else
-              echo "::error::$variant entry class $DESC is missing from the dex (minifier renamed or removed it)"
-              exit 1
-            fi
-
-            unzip -l "$APK" | grep -E 'META-INF/xposed/' || true
           done
+          echo "legacy xposed references in dex: none"
 
-          ls -l app/build/outputs/apk/debug app/build/outputs/apk/release
+          unzip -l "$APK" | grep -E 'META-INF/xposed/'
+          ls -l app/build/outputs/apk/release
 
-      - name: Upload APKs
+      - name: Upload release APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oautopin-apks
+          name: oautopin-release-apk
           if-no-files-found: warn
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/*.apk
