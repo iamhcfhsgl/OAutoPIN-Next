@@ -93,20 +93,65 @@ app/src/main/resources/META-INF/xposed/scope.list       -> com.android.systemui
 `res/values/arrays.xml` 里的 `scope` 数组保留（新式改用 `scope.list`，该数组已无人引用，
 如需可另行删除）。
 
-## R8 / release 构建
+## R8 / release 构建（有一个会让 release 包静默失效的坑）
 
 入口类由框架按名反射加载（名字写在 `java_init.list` 里），而 release 开了
-`isMinifyEnabled = true`，因此 `app/proguard-rules.pro` 里必须保住这个类名：
+`isMinifyEnabled = true`，因此 `app/proguard-rules.pro` 里的 keep 规则必须让这个类
+**保留原名**：
 
 ```proguard
--keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule { public <init>(); }
--adaptresourcefilecontents META-INF/xposed/java_init.list
+-keep class io.github.achyuki.oautopin.Hook { *; }
+-keep class * extends io.github.libxposed.api.XposedModule { public <init>(); }
 -dontwarn io.github.libxposed.annotation.**
 ```
 
-原来的规则 `-keep class io.github.achyuki.oautopin.Hook { *; }` 仍然有效且更保守，
-故一并保留。装成 release 包后请确认 APK 内
-`META-INF/xposed/java_init.list` 的内容仍是完整的类名。
+这一点是实测出来的，值得写清楚：最初按参考工程写成
+`-keep,allowoptimization,allowobfuscation ...` 并配 `-adaptresourcefilecontents
+META-INF/xposed/java_init.list`，结果 release 包里 `java_init.list` 变成 `d0.c`，
+而 dex 里也已经没有 `io.github.achyuki.oautopin.Hook` 这个类 —— 两者对不上，
+**release 包会彻底失效，而 debug 包完全正常**（不混淆，所以看不出问题）。
+
+结论：**这里不要用 `allowobfuscation`**，也不要把 `-adaptresourcefilecontents` 当作补救手段；
+直接用无修饰的 `-keep`。云编译里的 “Inspect the built APK” 步骤会断言
+「`java_init.list` 的内容 == 真实类名」且「该类确实存在于 dex」，防止以后回归。
+
+## 验证
+
+### 云端编译（已通过）
+
+`.github/workflows/android.yml` 在 GitHub Actions 上完成 debug + release 构建并通过
+APK 断言。当前成功运行：
+<https://github.com/iamhcfhsgl/OAutoPIN-Next/actions/runs/37176161957>
+
+对该产物（debug 8.3 MB / release 567 KB）的独立复核结果：
+
+| 检查项 | debug | release |
+| --- | --- | --- |
+| `META-INF/xposed/{java_init.list,module.prop,scope.list}` 已打包 | ✅ | ✅ |
+| `java_init.list` 内容 = `io.github.achyuki.oautopin.Hook` | ✅ | ✅ |
+| 该类存在于 dex（R8 未改名/未删除） | ✅ | ✅ |
+| `assets/xposed_init` 已移除 | ✅ | ✅ |
+| 清单里无 `xposedminversion` / `xposedmodule` 等 legacy meta-data | ✅ | ✅ |
+| dex 中无 `XSharedPreferences` / `XposedBridge` / `IXposedHookLoadPackage` | ✅ | ✅ |
+| `io.github.libxposed.service.XposedProvider` 已由 service 构件合并进清单 | ✅ | ✅ |
+
+构建时唯一的提示是 AGP 8.13 对 `compileSdk = 37` 的「建议使用更新的 AGP」警告，不影响构建；
+若想静音可在 `gradle.properties` 加 `android.suppressUnsupportedCompileSdk=37`。
+
+### 本地编译（已通过）
+
+本机没有 Android SDK，因此按 `io.github.libxposed:api:102.0.0` /
+`service:102.0.0` 的官方 javadoc 逐字复刻了 stub，再用 kotlinc 2.2.20 编译
+4 个真实源文件：**0 错误**，并用 `javap` 核对了字节码（入口类继承 `XposedModule`、
+`onPackageLoaded` 用 `getDefaultClassLoader()`、`onHotReloaded` 调用了
+`getOldHookHandles()` / `replaceHook()`、hook 回调返回 `Chain.proceed()` 的结果而非
+`Unit`）。脚本在 `_verify/build.ps1`。
+
+### 仍需在真机确认
+
+云编译只证明「能构建、元数据与产物正确」，运行期行为要在设备上验证：
+装到设备后在 LSPosed 中启用，**确认模块页不再出现废弃警告**；打开模块设置页保存 PIN，
+然后热重载模块（或重启 SystemUI），确认 SIM PIN 能自动解锁。
 
 ## 热重载
 
@@ -131,16 +176,13 @@ RemotePreferences 的可见性语义：注入进程通过 `getRemotePreferences`
 功能静默失效**。现在改为按 controller 实例记录（`WeakHashMap` 支撑的并发 set），
 每个新的 PIN 界面都会被服务一次。
 
-## 验证
+## 在 Android Studio 里继续开发
 
-本机没有 Android SDK / Gradle 缓存，**改动未经完整编译验证**（仅对 API 签名做过交叉核对）。
-请在 Android Studio 中：
-
-1. 安装 SDK Platform 37，然后 Sync 一次（会从 Maven Central 拉取
-   `io.github.libxposed:api:102.0.0`、`service:102.0.0` 与传递依赖 `interface:102.0.0`）；
-2. `./gradlew :app:assembleDebug`，再 `./gradlew :app:assembleRelease` 验证 R8 规则；
-3. 装到设备后在 LSPosed 中启用，**确认模块页不再出现废弃警告**；
-4. 打开模块设置页输入 PIN 保存，然后热重载模块（或重启 SystemUI），确认 SIM PIN 自动解锁。
+1. 安装 SDK Platform 37（`compileSdk = 37` 由 `service:102.0.0` 的 `minCompileSdk` 决定），
+   然后 Sync 一次：会从 Maven Central 拉取 `io.github.libxposed:api:102.0.0`、
+   `service:102.0.0` 与传递依赖 `interface:102.0.0`；
+2. `./gradlew :app:assembleDebug` / `:app:assembleRelease`；
+3. 也可以直接用仓库里的 `.github/workflows/android.yml` 在 Actions 上构建，无需本地环境。
 
 ## 已知注意点
 
