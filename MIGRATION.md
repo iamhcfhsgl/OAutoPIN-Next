@@ -153,9 +153,10 @@ META-INF/xposed/java_init.list`，结果 release 包里 `java_init.list` 变成 
 `.github/workflows/android.yml` 在 GitHub Actions 上构建 release 并断言产物；正式发行由
 `.github/workflows/release.yml` 在 `v*` 标签上完成签名与发布。已发布：
 
-- 发行版：<https://github.com/iamhcfhsgl/OAutoPIN-Next/releases/tag/v16.1.0>
-  （附件 `OAutoPIN-16.1.0.apk`，575.5 KB，`versionCode 2` / `versionName 16.1.0`）
-- 构建记录：<https://github.com/iamhcfhsgl/OAutoPIN-Next/actions/runs/37177518441>
+- 发行版：<https://github.com/iamhcfhsgl/OAutoPIN-Next/releases/tag/v16.2.0>
+  （附件 `OAutoPIN-16.2.0.apk`，575.6 KB，`versionCode 3` / `versionName 16.2.0`）
+- 构建记录：<https://github.com/iamhcfhsgl/OAutoPIN-Next/actions/runs/37178436694>
+- 上一个版本：<https://github.com/iamhcfhsgl/OAutoPIN-Next/releases/tag/v16.1.0>（`16.1.0`，改名前的 `io.github.achyuki.oautopin`）
 
 对**已发布附件**的独立复核结果（本地校验脚本直接解析 APK Signing Block，不依赖 apksigner）：
 
@@ -165,6 +166,7 @@ META-INF/xposed/java_init.list`，结果 release 包里 `java_init.list` 变成 
 | 签名证书可提取（v3、RSA 4096） | ✅ |
 | 证书有效期 | `2026-10-04` → **`2056-09-26`**（30 年，不会因证书过期而无法安装） |
 | `java_init.list` = `io.github.iamhcfhsgl.oautopin.Hook` | ✅ |
+| 清单与 dex 中已无旧包名 `io.github.achyuki.oautopin` | ✅ |
 | `module.prop` = `minApiVersion=102` / `targetApiVersion=102` / `staticScope=true` / `autoHotReload=true` | ✅ |
 | Hook 类存在于 dex（R8 未改名） | ✅ |
 | `assets/xposed_init` 不存在 | ✅ |
