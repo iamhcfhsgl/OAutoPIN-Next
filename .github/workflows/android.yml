@@ -1,0 +1,82 @@
+name: Android CI
+
+# Cloud build so the project can be compiled and verified without a local
+# Android SDK. Runs on every push and pull request, and can be started manually.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build debug and release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Fails early with a readable message if the wrapper or the module
+      # metadata shipped in the APK is malformed.
+      - name: Verify module metadata
+        run: |
+          set -e
+          echo "--- META-INF/xposed/module.prop ---"
+          cat app/src/main/resources/META-INF/xposed/module.prop
+          echo "--- META-INF/xposed/java_init.list ---"
+          cat app/src/main/resources/META-INF/xposed/java_init.list
+          echo "--- META-INF/xposed/scope.list ---"
+          cat app/src/main/resources/META-INF/xposed/scope.list
+          test -f app/src/main/resources/META-INF/xposed/module.prop
+          test -f app/src/main/resources/META-INF/xposed/java_init.list
+          test -f app/src/main/resources/META-INF/xposed/scope.list
+          test ! -e app/src/main/assets/xposed_init
+          echo "--- legacy meta-data must be gone ---"
+          ! grep -q 'xposedminversion' app/src/main/AndroidManifest.xml
+          ! grep -rq 'XSharedPreferences\|MODE_WORLD_READABLE' app/src/main/kotlin
+
+      - name: Assemble debug
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Assemble release
+        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Inspect the built APK
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          echo "release apk: $APK"
+          unzip -p "$APK" META-INF/xposed/java_init.list
+          echo "--- entry class present in dex? ---"
+          unzip -o -q "$APK" classes.dex -d /tmp/apkdex
+          grep -c 'Lio/github/achyuki/oautopin/Hook;' /tmp/apkdex/classes.dex || true
+          ls -l app/build/outputs/apk/debug app/build/outputs/apk/release
+
+      - name: Upload APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oautopin-apks
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
